@@ -1,0 +1,1 @@
+{ "name": "kradar-zstd", "version": "1.0.0", "main": "index.js", "description": "Descompactador zstd arquivo->arquivo (streaming) para Android" }

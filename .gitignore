@@ -33,3 +33,14 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# gerados / locais
+/android/
+/ios/
+*.apk
+build.log
+diag.log
+local.properties
+build/
+.gradle/
+.cxx/

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { NativeModules, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, NativeModules, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as Speech from 'expo-speech';
 import { simulateApproach, OPTION_VALUES, DEFAULT_SETTINGS } from './src/detector';
@@ -133,6 +133,15 @@ export default function App() {
     }
   };
 
+  // Para o serviço (e o beep), marca como desativado e encerra o processo do app.
+  const quit = async () => {
+    try {
+      await stopService();
+      await saveConfig({ enabled: false });
+    } catch {}
+    try { NativeModules.KRadarZstd.quitApp(); } catch { BackHandler.exitApp(); }
+  };
+
   const setOption = async (key, value) => {
     const next = { ...settings, [key]: value };
     setSettings(next);
@@ -149,7 +158,12 @@ export default function App() {
   if (showOptions) {
     return (
       <View style={s.root}>
-        <Text style={s.title}>Opções</Text>
+        <View style={s.header}>
+          <Text style={s.title}>Opções</Text>
+          <Pressable style={[s.btn, s.btnBlue, { marginTop: 0, paddingHorizontal: 24 }]} onPress={() => setShowOptions(false)}>
+            <Text style={s.btnText}>Voltar</Text>
+          </Pressable>
+        </View>
         <ScrollView>
           {groups.map((g) => (
             <View key={g.key} style={{ marginBottom: 14 }}>
@@ -175,9 +189,6 @@ export default function App() {
           </View>
           <Text style={s.foot}>Acima do limite de velocidade do radar o beep fica mais rápido (0,2 s).</Text>
         </ScrollView>
-        <Pressable style={[s.btn, s.btnBlue]} onPress={() => setShowOptions(false)}>
-          <Text style={s.btnText}>Voltar</Text>
-        </Pressable>
       </View>
     );
   }
@@ -186,67 +197,85 @@ export default function App() {
 
   return (
     <View style={s.root}>
-      <Text style={s.title}>KRadarDetector</Text>
-      <Text style={s.line}>Serviço: <Text style={{ color: running ? '#4ade80' : '#f87171' }}>{running ? 'ATIVO' : 'parado'}</Text></Text>
-
-      <Pressable style={[s.btn, running && s.btnOff]} onPress={toggleService}>
-        <Text style={s.btnText}>{running ? 'Desativar' : 'Ativar'}</Text>
-      </Pressable>
-
-      <Text style={[s.line, { marginTop: 18 }]}>Estados (toque para marcar/desmarcar):</Text>
-      <View style={s.grid}>
-        {UFS.map((u) => (
-          <Pressable key={u} style={[s.chip, ufs.includes(u) && s.chipOn]} onPress={() => toggleUf(u)} disabled={!!busy && busy.includes('...')}>
-            <Text style={s.chipText}>{u}</Text>
-          </Pressable>
-        ))}
+      <View style={s.header}>
+        <Text style={s.title}>KRadarDetector</Text>
+        <Text style={s.line}>Serviço: <Text style={{ color: running ? '#4ade80' : '#f87171' }}>{running ? 'ATIVO' : 'parado'}</Text></Text>
       </View>
 
-      <ScrollView style={{ marginTop: 10 }}>
-        {ufs.map((u) => (
-          <Text key={u} style={s.line}>
-            {u}: {info[u] ? `base de ${info[u]}` : <Text style={{ color: '#facc15' }}>não instalada</Text>}
-          </Text>
-        ))}
-        {!ufs.length && <Text style={s.line}>Nenhum estado selecionado.</Text>}
-      </ScrollView>
-
-      <Pressable style={[s.btn, s.btnBlue]} onPress={() => update(false)} disabled={!!busy && busy.includes('...')}>
-        <Text style={s.btnText}>{missing.length ? 'Baixar bases' : 'Atualizar bases'}</Text>
-      </Pressable>
-
-      <Pressable style={[s.btn, s.btnGray]} onPress={() => setShowOptions(true)}>
-        <Text style={s.btnText}>Opções</Text>
-      </Pressable>
-      <Pressable style={[s.btn, s.btnGray]} onPress={() => testAlert('below')} disabled={!!busy && busy.includes('...')}>
-        <Text style={s.btnText}>Testar: abaixo do limite</Text>
-      </Pressable>
-      <Pressable style={[s.btn, s.btnWarn]} onPress={() => testAlert('above')} disabled={!!busy && busy.includes('...')}>
-        <Text style={s.btnText}>Testar: acima do limite</Text>
-      </Pressable>
-
+      {/* status e erros sempre visíveis, no topo (telas pequenas cortam o rodapé) */}
       {!!busy && <Text style={s.info}>{busy}</Text>}
-      {!!error && <Text style={s.err}>{error}</Text>}
-      <Text style={s.foot}>Dados: Pardal (OpenStreetMap, ODbL 1.0)</Text>
+      {!!error && <Text style={s.err} onPress={() => setError('')}>{error}  (toque para fechar)</Text>}
+
+      <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
+        <View style={s.row}>
+          <Pressable style={[s.btn, s.flex, running && s.btnOff]} onPress={toggleService}>
+            <Text style={s.btnText}>{running ? 'Desativar' : 'Ativar'}</Text>
+          </Pressable>
+          <Pressable style={[s.btn, s.flex, s.btnBlue]} onPress={() => update(false)} disabled={busy.includes('...')}>
+            <Text style={s.btnText}>{missing.length ? 'Baixar bases' : 'Atualizar bases'}</Text>
+          </Pressable>
+        </View>
+
+        <View style={s.row}>
+          <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={() => testAlert('below')} disabled={busy.includes('...')}>
+            <Text style={s.btnText}>Testar: abaixo do limite</Text>
+          </Pressable>
+          <Pressable style={[s.btn, s.flex, s.btnWarn]} onPress={() => testAlert('above')} disabled={busy.includes('...')}>
+            <Text style={s.btnText}>Testar: acima do limite</Text>
+          </Pressable>
+        </View>
+
+        <View style={s.row}>
+          <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={() => setShowOptions(true)}>
+            <Text style={s.btnText}>Opções</Text>
+          </Pressable>
+          <Pressable style={[s.btn, s.flex, s.btnOff]} onPress={quit}>
+            <Text style={s.btnText}>Encerrar app</Text>
+          </Pressable>
+        </View>
+
+        <Text style={[s.line, { marginTop: 14 }]}>Estados (toque para marcar/desmarcar):</Text>
+        <View style={s.grid}>
+          {UFS.map((u) => (
+            <Pressable key={u} style={[s.chip, ufs.includes(u) && s.chipOn]} onPress={() => toggleUf(u)} disabled={busy.includes('...')}>
+              <Text style={s.chipText}>{u}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={{ marginTop: 8 }}>
+          {ufs.map((u) => (
+            <Text key={u} style={s.line}>
+              {u}: {info[u] ? `base de ${info[u]}` : <Text style={{ color: '#facc15' }}>não instalada</Text>}
+            </Text>
+          ))}
+          {!ufs.length && <Text style={s.line}>Nenhum estado selecionado.</Text>}
+        </View>
+
+        <Text style={s.foot}>Dados: Pardal (OpenStreetMap, ODbL 1.0)</Text>
+      </ScrollView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000', padding: 20, paddingTop: 48 },
-  title: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginBottom: 12 },
+  root: { flex: 1, backgroundColor: '#000', padding: 14, paddingTop: 28 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  title: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
   line: { color: '#ddd', fontSize: 16, marginVertical: 3 },
-  btn: { backgroundColor: '#16a34a', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 12 },
+  row: { flexDirection: 'row' },
+  flex: { flex: 1, marginHorizontal: 3 },
+  btn: { backgroundColor: '#16a34a', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 8 },
   btnOff: { backgroundColor: '#dc2626' },
   btnBlue: { backgroundColor: '#2563eb' },
   btnGray: { backgroundColor: '#4b5563' },
   btnWarn: { backgroundColor: '#ea580c' },
-  btnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  btnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
   chip: { backgroundColor: '#222', paddingVertical: 8, paddingHorizontal: 12, margin: 3, borderRadius: 6 },
   chipOn: { backgroundColor: '#2563eb' },
   chipText: { color: '#fff', fontSize: 15 },
-  info: { color: '#facc15', marginTop: 8 },
-  err: { color: '#f87171', marginTop: 8 },
-  foot: { color: '#666', fontSize: 11, marginTop: 8 },
+  info: { color: '#facc15', fontSize: 15, marginBottom: 4 },
+  err: { color: '#f87171', fontSize: 15, marginBottom: 4 },
+  foot: { color: '#666', fontSize: 11, marginTop: 10 },
 });

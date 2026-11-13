@@ -115,4 +115,22 @@ public class KRadarZstdModule extends ReactContextBaseJavaModule {
             }, 0, ms, java.util.concurrent.TimeUnit.MILLISECONDS);
         }
     }
+    /** Fecha a tela, remove o app dos recentes e encerra o processo (derruba também o beep). */
+    @ReactMethod
+    public void quitApp() {
+        setBeep(0);
+        final android.app.Activity act = getCurrentActivity();
+        if (act != null) {
+            act.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try { act.finishAndRemoveTask(); } catch (Throwable ignored) { act.finish(); }
+                }
+            });
+        }
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() { android.os.Process.killProcess(android.os.Process.myPid()); }
+        }, 400);
+    }
 }

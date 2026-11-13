@@ -14,12 +14,14 @@ export default function App() {
   const [error, setError] = useState('');
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [showOptions, setShowOptions] = useState(false);
+  const [autoStart, setAutoStart] = useState(true);
   const autoDone = useRef(false);
 
   const refresh = useCallback(async () => {
     const cfg = await loadConfig();
     setUfs(cfg.ufs);
     setSettings(cfg.settings);
+    setAutoStart(cfg.autoStart);
     setRunning(await isServiceRunning());
     const next = {};
     try {
@@ -147,6 +149,16 @@ export default function App() {
               </View>
             </View>
           ))}
+          <View style={{ marginBottom: 14 }}>
+            <Text style={s.line}>Iniciar junto com o Android</Text>
+            <View style={s.grid}>
+              {[[true, 'Ligado'], [false, 'Desligado']].map(([v, label]) => (
+                <Pressable key={label} style={[s.chip, autoStart === v && s.chipOn]} onPress={async () => { setAutoStart(v); await saveConfig({ autoStart: v }); }}>
+                  <Text style={s.chipText}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
           <Text style={s.foot}>Acima do limite de velocidade do radar o beep fica mais rápido (0,2 s).</Text>
         </ScrollView>
         <Pressable style={[s.btn, s.btnBlue]} onPress={() => setShowOptions(false)}>

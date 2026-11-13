@@ -1,6 +1,7 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
+import { AppRegistry } from 'react-native';
 import { getDbs, loadConfig } from './database';
 import { NativeModules } from 'react-native';
 import { analyze, resetStages } from './detector';
@@ -69,3 +70,14 @@ export async function stopService() {
   setBeep(0);
   if (await isServiceRunning()) await Location.stopLocationUpdatesAsync(TASK_NAME);
 }
+
+// Executada sem tela quando o Android termina de ligar (ver BootReceiver, módulo kradar-zstd).
+AppRegistry.registerHeadlessTask('KRadarBoot', () => async () => {
+  try {
+    const cfg = await loadConfig();
+    if (!cfg.autoStart || !cfg.ufs.length) return;
+    await startService();
+  } catch (e) {
+    console.warn('kradar boot', e);
+  }
+});

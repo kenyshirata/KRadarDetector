@@ -27,6 +27,7 @@ export async function loadConfig() {
   cfg.hashes = cfg.hashes || {};
   cfg.enabled = !!cfg.enabled;
   cfg.settings = normalizeSettings(cfg.settings);
+  cfg.autoStart = cfg.autoStart !== false; // iniciar com o Android (padrão: ligado)
   return cfg;
 }
 

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, NativeModules, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Linking, NativeModules, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as FileSystem from 'expo-file-system';
-import * as Speech from 'expo-speech';
+import { speak, findPortugueseVoice } from './src/speech';
 import { simulateApproach, OPTION_VALUES, DEFAULT_SETTINGS } from './src/detector';
 import { UFS, loadConfig, saveConfig, updateDatabases, findPending, getDbs, getMeta, closeAll } from './src/database';
 import { isServiceRunning, requestPermissions, startService, stopService } from './src/background';
@@ -15,6 +15,7 @@ export default function App() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [showOptions, setShowOptions] = useState(false);
   const [autoStart, setAutoStart] = useState(true);
+  const [voiceInfo, setVoiceInfo] = useState('Verificando voz...');
   const autoDone = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -113,7 +114,7 @@ export default function App() {
   // mode: 'below' = abaixo do limite (beep compassado); 'above' = acima (beep rápido).
   const testAlert = async (mode) => {
     setError('');
-    const say = (m) => Speech.speak(m, { language: 'pt-BR', rate: 1.05 });
+    const say = (m) => speak(m);
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const beep = (ms) => { try { NativeModules.KRadarZstd.setBeep(ms); } catch {} };
     try {
@@ -140,6 +141,19 @@ export default function App() {
       await saveConfig({ enabled: false });
     } catch {}
     try { NativeModules.KRadarZstd.quitApp(); } catch { BackHandler.exitApp(); }
+  };
+
+  const checkVoice = async (force) => {
+    const { voice, total } = await findPortugueseVoice(force);
+    setVoiceInfo(voice ? 'Voz em português: ' + voice.name + ' (' + voice.language + ')' : 'Nenhuma voz em português instalada (' + total + ' vozes no aparelho). Instale pt-BR nas configurações de voz do Android.');
+  };
+
+  const openVoiceSettings = async () => {
+    try {
+      await Linking.sendIntent('com.android.settings.TTS_SETTINGS');
+    } catch {
+      try { await Linking.sendIntent('android.settings.SETTINGS'); } catch { setError('Não consegui abrir as configurações de voz do Android.'); }
+    }
   };
 
   const setOption = async (key, value) => {
@@ -187,6 +201,18 @@ export default function App() {
               ))}
             </View>
           </View>
+          <View style={{ marginBottom: 14 }}>
+            <Text style={s.line}>Voz da narração</Text>
+            <Text style={s.info}>{voiceInfo}</Text>
+            <View style={s.row}>
+              <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={async () => { await checkVoice(true); speak('Radar à frente, limite 60'); }}>
+                <Text style={s.btnText}>Testar voz</Text>
+              </Pressable>
+              <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={openVoiceSettings}>
+                <Text style={s.btnText}>Config. de voz do Android</Text>
+              </Pressable>
+            </View>
+          </View>
           <Text style={s.foot}>Acima do limite de velocidade do radar o beep fica mais rápido (0,2 s).</Text>
         </ScrollView>
       </View>
@@ -226,7 +252,7 @@ export default function App() {
         </View>
 
         <View style={s.row}>
-          <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={() => setShowOptions(true)}>
+          <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={() => { setShowOptions(true); checkVoice(false); }}>
             <Text style={s.btnText}>Opções</Text>
           </Pressable>
           <Pressable style={[s.btn, s.flex, s.btnOff]} onPress={quit}>

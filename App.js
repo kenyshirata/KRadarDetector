@@ -3,7 +3,7 @@ import { NativeModules, Pressable, ScrollView, StyleSheet, Text, View } from 're
 import * as FileSystem from 'expo-file-system';
 import * as Speech from 'expo-speech';
 import { simulateApproach, OPTION_VALUES, DEFAULT_SETTINGS } from './src/detector';
-import { UFS, loadConfig, saveConfig, updateDatabases, getDbs, getMeta, closeAll } from './src/database';
+import { UFS, loadConfig, saveConfig, updateDatabases, findPending, getDbs, getMeta, closeAll } from './src/database';
 import { isServiceRunning, requestPermissions, startService, stopService } from './src/background';
 
 export default function App() {
@@ -33,21 +33,35 @@ export default function App() {
     return cfg;
   }, []);
 
-  // Atualiza as bases selecionadas; reinicia o serviço se estava ativo (o arquivo é trocado).
+  // Atualiza as bases selecionadas. Só mexe no serviço se houver algo para baixar:
+  // sem internet (ou sem novidade) o serviço em segundo plano segue intacto.
   const update = useCallback(async (force = false, quiet = false) => {
     setError('');
     const cfg = await loadConfig();
+    if (!cfg.ufs.length) return;
+    let pending;
+    try {
+      setBusy('Consultando versão mais recente...');
+      pending = await findPending(cfg.ufs, force);
+    } catch (e) {
+      setBusy('');
+      if (!quiet) setError('Sem conexão com a internet para consultar atualizações.');
+      return;
+    }
+    if (!pending.length) {
+      setBusy(quiet ? '' : 'Tudo já está na versão mais recente.');
+      return;
+    }
     const wasRunning = await isServiceRunning();
     try {
-      if (!cfg.ufs.length) return;
-      if (wasRunning) await stopService();
+      if (wasRunning) await stopService(); // o arquivo da base será trocado
       closeAll();
-      const r = await updateDatabases(cfg.ufs, setBusy, force);
+      const r = await updateDatabases(pending, setBusy, force);
       const fails = Object.values(r.failed);
-      if (fails.length && !quiet) setError(fails.join('\n'));
-      setBusy(r.updated.length ? `Atualizado: ${r.updated.join(', ')}` : quiet ? '' : 'Tudo já está na versão mais recente.');
+      if (fails.length && !quiet) setError(fails.join(String.fromCharCode(10)));
+      setBusy(r.updated.length ? 'Atualizado: ' + r.updated.join(', ') : '');
     } catch (e) {
-      if (!quiet) setError(String(e.message || e)); // offline ao abrir: silencioso
+      if (!quiet) setError(String(e.message || e));
       setBusy('');
     } finally {
       if (wasRunning) await startService().catch(() => {});

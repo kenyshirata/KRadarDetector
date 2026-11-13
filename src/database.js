@@ -50,6 +50,23 @@ async function fetchSums() {
   return out;
 }
 
+/**
+ * Consulta a rede (sem tocar em nada local) e diz quais estados precisam de download.
+ * Lança erro se estiver sem internet; quem chama decide se mostra ou ignora.
+ */
+export async function findPending(ufs, force = false) {
+  const sums = await fetchSums();
+  const cfg = await loadConfig();
+  const pending = [];
+  for (const uf of ufs) {
+    const want = sums[`pardal-${uf}.sqlite.zst`];
+    const exists = (await FileSystem.getInfoAsync(SQLITE_DIR + fileOf(uf))).exists;
+    // sem hash publicado: deixa o updateDatabases reportar o erro da UF
+    if (!want || force || !exists || cfg.hashes[uf] !== want) pending.push(uf);
+  }
+  return pending;
+}
+
 /** Baixa pardal-<UF>.sqlite.zst, confere o sha256, descompacta e instala. */
 async function downloadOne(uf, want, onStatus) {
   const file = `pardal-${uf}.sqlite.zst`;

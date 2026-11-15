@@ -1,6 +1,7 @@
 package com.kradarzstd;
 
 import com.facebook.react.bridge.Promise;
+import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
@@ -176,5 +177,80 @@ public class KRadarZstdModule extends ReactContextBaseJavaModule {
                 }
             }
         }, "kradar-prime").start();
+    }
+    private static final Object PLAY_LOCK = new Object(); // uma fala por vez
+
+    private static byte[] readClip(android.content.res.AssetManager am, String name) throws java.io.IOException {
+        java.io.InputStream in = am.open("tts/" + name + ".wav");
+        try {
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            byte[] all = bo.toByteArray();
+            // WAV canônico gerado pelo projeto: PCM 16 kHz mono 16 bits, dados a partir do byte 44
+            byte[] pcm = new byte[all.length - 44];
+            System.arraycopy(all, 44, pcm, 0, pcm.length);
+            return pcm;
+        } finally {
+            in.close();
+        }
+    }
+
+    /**
+     * Toca frases pré-gravadas em pt-BR (assets/tts/*.wav), sem usar o motor de voz do sistema.
+     * Antes: som curto quase inaudível + silêncio até completar leadMs (acorda o áudio da multimídia).
+     * Resolve quando termina de tocar; rejeita se algum trecho não existir (o JS usa o TTS como plano B).
+     */
+    @ReactMethod
+    public void playClips(final ReadableArray names, final double leadMsD, final Promise promise) {
+        final android.content.res.AssetManager am = getReactApplicationContext().getAssets();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                synchronized (PLAY_LOCK) {
+                    android.media.AudioTrack track = null;
+                    try {
+                        final int rate = 16000;
+                        final int leadMs = (int) leadMsD;
+                        java.io.ByteArrayOutputStream pcm = new java.io.ByteArrayOutputStream();
+                        if (leadMs > 0) {
+                            int leadSamples = rate * leadMs / 1000;
+                            int toneSamples = Math.min(rate * 150 / 1000, leadSamples);
+                            int fade = rate * 20 / 1000;
+                            for (int i = 0; i < leadSamples; i++) {
+                                short v = 0;
+                                if (i < toneSamples) {
+                                    double env = Math.min(1.0, Math.min((double) i / fade, (double) (toneSamples - i) / fade));
+                                    v = (short) (Math.sin(2 * Math.PI * 1000.0 * i / rate) * 1300 * env);
+                                }
+                                pcm.write(v & 0xff);
+                                pcm.write((v >> 8) & 0xff);
+                            }
+                        }
+                        final byte[] gap = new byte[rate * 80 / 1000 * 2];
+                        for (int i = 0; i < names.size(); i++) {
+                            if (i > 0) pcm.write(gap, 0, gap.length);
+                            byte[] clip = readClip(am, names.getString(i));
+                            pcm.write(clip, 0, clip.length);
+                        }
+                        final byte[] data = pcm.toByteArray();
+                        int min = android.media.AudioTrack.getMinBufferSize(rate,
+                                android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT);
+                        track = new android.media.AudioTrack(AudioManager.STREAM_MUSIC, rate,
+                                android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT,
+                                Math.max(min, 8192), android.media.AudioTrack.MODE_STREAM);
+                        track.play();
+                        track.write(data, 0, data.length);
+                        Thread.sleep((long) (data.length / 2) * 1000L / rate + 200L);
+                        promise.resolve(true);
+                    } catch (Throwable t) {
+                        promise.reject("E_CLIPS", String.valueOf(t.getMessage()), t);
+                    } finally {
+                        try { if (track != null) { track.stop(); track.release(); } } catch (Throwable ignored) {}
+                    }
+                }
+            }
+        }, "kradar-clips").start();
     }
 }

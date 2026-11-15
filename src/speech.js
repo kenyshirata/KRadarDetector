@@ -39,3 +39,49 @@ export async function speak(text, leadMs = 500) {
 export function stopSpeech() {
   Speech.stop();
 }
+
+// ---- frases pré-gravadas pt-BR (assets/tts, tocadas pelo código nativo) ----
+// Não dependem do motor/idioma de voz da multimídia. Só cobrem limites múltiplos de 5 (5..130);
+// qualquer outro caso cai no TTS do sistema (plano B).
+const LIMIT_CLIPS = new Set();
+for (let v = 5; v <= 130; v += 5) LIMIT_CLIPS.add(v);
+
+/** Lista de trechos de áudio para o aviso, ou null se não houver gravação. */
+export function clipsFor(alert) {
+  const { kind, limit } = alert;
+  if (kind === 'RED_LIGHT') return ['p_semaforo'];
+  const base = kind === 'SECTION' ? 'p_trecho' : 'p_radar';
+  if (limit == null) return [base + '0'];
+  const n = Math.round(Number(limit));
+  if (!LIMIT_CLIPS.has(n)) return null;
+  return [base, 'n_' + n];
+}
+
+let playing = false;
+
+/**
+ * Toca o aviso: áudio embutido (offline, sem depender do TTS); se faltar trecho, usa o TTS.
+ * alert = { text, kind, limit }. Ignora chamadas enquanto outra fala está tocando só quando
+ * `dropIfBusy` (usado pelo botão de teste); os avisos reais ficam em fila no nativo.
+ */
+export async function speakAlert(alert, leadMs = 500, dropIfBusy = false, source = 'app') {
+  if (dropIfBusy && playing) return false;
+  playing = true;
+  try {
+    // source 'android': usa só o TTS do sistema; 'app' (padrão): áudio embutido, TTS como reserva
+    const clips = source === 'android' ? null : clipsFor(alert);
+    if (clips) {
+      try {
+        await NativeModules.KRadarZstd.playClips(clips, leadMs);
+        return true;
+      } catch {
+        // cai para o TTS
+      }
+    }
+    try { Speech.stop(); } catch {}
+    await speak(alert.text, leadMs);
+    return true;
+  } finally {
+    playing = false;
+  }
+}

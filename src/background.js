@@ -1,6 +1,6 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
-import { speak } from './speech';
+import { speakAlert } from './speech';
 import { logError } from './errorlog';
 import { AppRegistry } from 'react-native';
 import { getDbs, loadConfig } from './database';
@@ -26,11 +26,9 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }) => {
       accuracy: l.coords.accuracy,
     };
     const { settings } = await loadConfig();
-    const { msgs, beepMs } = analyze(dbs, loc, undefined, settings);
+    const { alerts, beepMs } = analyze(dbs, loc, undefined, settings);
     setBeep(beepMs); // renovado a cada atualização de GPS; o nativo repete entre elas
-    for (const msg of msgs) {
-      speak(msg, settings.leadMs);
-    }
+    for (const a of alerts) speakAlert(a, settings.leadMs, false, settings.voice);
   } catch (e) {
     logError('task', e);
   }

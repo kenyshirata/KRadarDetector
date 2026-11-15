@@ -13,9 +13,10 @@ export const OPTION_VALUES = {
   beepM: [50, 100, 150, 200, 250, 300],
   firstM: [0, 200, 300, 400, 500, 600],
   secondM: [0, 50, 100, 150],
+  voice: ['app', 'android'], // app = frases pt-BR embutidas (padrão); android = voz do sistema (TTS)
   leadMs: [0, 300, 500, 800, 1000, 1500], // atraso antes da fala (acorda o áudio da multimídia)
 };
-export const DEFAULT_SETTINGS = { beepM: 200, firstM: 600, secondM: 150, leadMs: 500 };
+export const DEFAULT_SETTINGS = { beepM: 200, firstM: 600, secondM: 150, leadMs: 500, voice: 'app' };
 
 export function normalizeSettings(s) {
   const out = { ...DEFAULT_SETTINGS };
@@ -137,6 +138,7 @@ export function analyze(dbs, loc, stageMap = stages, settings = DEFAULT_SETTINGS
   const { beepM, firstM, secondM } = normalizeSettings(settings);
   const list = Array.isArray(dbs) ? dbs : [dbs];
   const msgs = [];
+  const alerts = []; // mesmos avisos, em forma estruturada (para tocar o áudio embutido)
   const nearby = [];
   for (const db of list) {
     for (const r of queryNearby(db, loc.lat, loc.lng)) {
@@ -162,15 +164,17 @@ export function analyze(dbs, loc, stageMap = stages, settings = DEFAULT_SETTINGS
       if (st < 2) {
         stageMap.set(r.key, 2);
         msgs.push(`Atenção! ${what} à frente${lim}`);
+        alerts.push({ text: msgs[msgs.length - 1], kind: r.kind, limit: r.limit_kmh });
       }
     } else if (firstM > 0 && r.dist <= firstM && r.dist > secondM && st < 1) {
       stageMap.set(r.key, 1);
       msgs.push(`Atenção! ${what} à frente${lim}`);
+      alerts.push({ text: msgs[msgs.length - 1], kind: r.kind, limit: r.limit_kmh });
     }
   }
   // radar fora do alcance libera o estado para avisar de novo numa próxima passagem
   for (const k of [...stageMap.keys()]) if (!seen.has(k)) stageMap.delete(k);
-  return { msgs, beepMs };
+  return { msgs, alerts, beepMs };
 }
 
 /** Compatibilidade: só as frases. */
@@ -223,7 +227,7 @@ export function simulateApproach(dbs, mode = 'below', settings = DEFAULT_SETTING
       speed: speedKmh / 3.6,
       accuracy: 5,
     };
-    const { msgs, beepMs } = analyze([only], loc, sim, settings);
-    return { dist, speedKmh, limit, msgs, beepMs };
+    const { msgs, alerts, beepMs } = analyze([only], loc, sim, settings);
+    return { dist, speedKmh, limit, msgs, alerts, beepMs };
   });
 }

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Linking, NativeModules, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as FileSystem from 'expo-file-system';
-import { speak, findPortugueseVoice } from './src/speech';
+import { speakAlert, stopSpeech, findPortugueseVoice } from './src/speech';
 import Speedometer from './src/Speedometer';
 import { readLastError, clearLastError } from './src/errorlog';
 import { simulateApproach, OPTION_VALUES, DEFAULT_SETTINGS } from './src/detector';
@@ -21,6 +21,7 @@ export default function App() {
   const [autoUpdate, setAutoUpdate] = useState(false);
   const [lastError, setLastError] = useState('');
   const autoDone = useRef(false);
+  const voiceTesting = useRef(false);
 
   const refresh = useCallback(async () => {
     const cfg = await loadConfig();
@@ -120,7 +121,7 @@ export default function App() {
   // mode: 'below' = abaixo do limite (beep compassado); 'above' = acima (beep rápido).
   const testAlert = async (mode) => {
     setError('');
-    const say = (m) => speak(m, settings.leadMs);
+    const say = (al) => speakAlert(al, settings.leadMs, false, settings.voice);
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const beep = (ms) => { try { NativeModules.KRadarZstd.setBeep(ms); } catch {} };
     try {
@@ -128,8 +129,8 @@ export default function App() {
       for (const st of steps) {
         setBusy(`Teste ${mode === 'above' ? 'ACIMA' : 'abaixo'} do limite: ${st.dist} m · ${Math.round(st.speedKmh)} km/h (limite ${st.limit})...`);
         beep(st.beepMs);
-        st.msgs.forEach(say);
-        await wait(st.msgs.length ? 3500 : 1500);
+        st.alerts.forEach(say);
+        await wait(st.alerts.length ? 4500 : 1500);
       }
       beep(0);
       setBusy('Teste concluído.');
@@ -154,6 +155,19 @@ export default function App() {
     setVoiceInfo(voice ? 'Voz em português: ' + voice.name + ' (' + voice.language + ')' : 'Nenhuma voz em português instalada (' + total + ' vozes no aparelho). Instale pt-BR nas configurações de voz do Android.');
   };
 
+  // Testar voz: toca UMA vez; ignora toques enquanto estiver falando (evita repetição em fila).
+  const testVoice = async () => {
+    if (voiceTesting.current) return;
+    voiceTesting.current = true;
+    try {
+      stopSpeech();
+      checkVoice(true);
+      await speakAlert({ text: 'Atenção! Radar à frente, limite 60', kind: 'FIXED', limit: 60 }, settings.leadMs, true, settings.voice);
+    } finally {
+      voiceTesting.current = false;
+    }
+  };
+
   const openVoiceSettings = async () => {
     try {
       await Linking.sendIntent('com.android.settings.TTS_SETTINGS');
@@ -168,11 +182,12 @@ export default function App() {
     await saveConfig({ settings: next });
   };
 
-  const fmt = (v, key) => (v === 0 ? 'Desligado' : key === 'leadMs' ? `${v / 1000} s` : `${v} m`);
+  const fmt = (v, key) => (key === 'voice' ? (v === 'app' ? 'App (pt-BR embutida)' : 'Android (voz do sistema)') : v === 0 ? 'Desligado' : key === 'leadMs' ? `${v / 1000} s` : `${v} m`);
   const groups = [
     { key: 'beepM', title: 'Beep começa a tocar a (antes do radar)' },
     { key: 'firstM', title: 'Primeiro aviso falado' },
     { key: 'secondM', title: 'Segundo aviso falado' },
+    { key: 'voice', title: 'Voz dos avisos' },
     { key: 'leadMs', title: 'Atraso e som de abertura antes da fala (evita cortar o começo)' },
   ];
 
@@ -181,7 +196,7 @@ export default function App() {
       <View style={s.root}>
         <View style={s.header}>
           <Text style={s.title}>Opções</Text>
-          <Pressable style={[s.btn, s.btnBlue, { marginTop: 0, paddingHorizontal: 24 }]} onPress={() => setShowOptions(false)}>
+          <Pressable style={[s.btn, s.btnBlue, { marginTop: 0, paddingHorizontal: 24 }]} onPress={() => { stopSpeech(); setShowOptions(false); }}>
             <Text style={s.btnText}>Voltar</Text>
           </Pressable>
         </View>
@@ -210,9 +225,10 @@ export default function App() {
           </View>
           <View style={{ marginBottom: 14 }}>
             <Text style={s.line}>Voz da narração</Text>
+            <Text style={s.info}>Padrão: voz pt-BR embutida no app (offline, não depende do idioma da multimídia; a voz do sistema só entra como reserva). Opção "Android": usa sempre a voz do sistema, abaixo.</Text>
             <Text style={s.info}>{voiceInfo}</Text>
             <View style={s.row}>
-              <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={async () => { await checkVoice(true); speak('Atenção! Radar à frente, limite 60', settings.leadMs); }}>
+              <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={testVoice}>
                 <Text style={s.btnText}>Testar voz</Text>
               </Pressable>
               <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={openVoiceSettings}>

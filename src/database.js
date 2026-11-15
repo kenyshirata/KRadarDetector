@@ -27,6 +27,7 @@ export async function loadConfig() {
   cfg.hashes = cfg.hashes || {};
   cfg.enabled = !!cfg.enabled;
   cfg.settings = normalizeSettings(cfg.settings);
+  cfg.autoUpdate = cfg.autoUpdate === true; // atualizar bases ao abrir (padrão: desligado, app 100% offline)
   cfg.autoStart = cfg.autoStart !== false; // iniciar com o Android (padrão: ligado)
   return cfg;
 }
@@ -39,7 +40,15 @@ export async function saveConfig(patch) {
 
 /** Mapa nome-do-arquivo -> sha256 publicado na release mais recente. */
 async function fetchSums() {
-  const res = await fetch(`${BASE}/SHA256SUMS.txt`);
+  // sem internet o app não pode ficar pendurado: aborta em 8 s
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : null;
+  let res;
+  try {
+    res = await fetch(`${BASE}/SHA256SUMS.txt`, ctl ? { signal: ctl.signal } : undefined);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   if (!res.ok) throw new Error(`SHA256SUMS.txt indisponível (HTTP ${res.status})`);
   const out = {};
   const text = await res.text();

@@ -13,8 +13,9 @@ export const OPTION_VALUES = {
   beepM: [50, 100, 150, 200, 250, 300],
   firstM: [0, 200, 300, 400, 500, 600],
   secondM: [0, 50, 100, 150],
+  leadMs: [0, 300, 500, 800, 1000, 1500], // atraso antes da fala (acorda o áudio da multimídia)
 };
-export const DEFAULT_SETTINGS = { beepM: 200, firstM: 600, secondM: 150 };
+export const DEFAULT_SETTINGS = { beepM: 200, firstM: 600, secondM: 150, leadMs: 500 };
 
 export function normalizeSettings(s) {
   const out = { ...DEFAULT_SETTINGS };
@@ -160,11 +161,11 @@ export function analyze(dbs, loc, stageMap = stages, settings = DEFAULT_SETTINGS
     if (secondM > 0 && r.dist <= secondM) {
       if (st < 2) {
         stageMap.set(r.key, 2);
-        msgs.push(`${what} à frente${lim}`);
+        msgs.push(`Atenção! ${what} à frente${lim}`);
       }
     } else if (firstM > 0 && r.dist <= firstM && r.dist > secondM && st < 1) {
       stageMap.set(r.key, 1);
-      msgs.push(`${what} à frente${lim}`);
+      msgs.push(`Atenção! ${what} à frente${lim}`);
     }
   }
   // radar fora do alcance libera o estado para avisar de novo numa próxima passagem

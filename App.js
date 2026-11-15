@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Linking, NativeModules, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import { speak, findPortugueseVoice } from './src/speech';
+import Speedometer from './src/Speedometer';
+import { readLastError, clearLastError } from './src/errorlog';
 import { simulateApproach, OPTION_VALUES, DEFAULT_SETTINGS } from './src/detector';
 import { UFS, loadConfig, saveConfig, updateDatabases, findPending, getDbs, getMeta, closeAll } from './src/database';
 import { isServiceRunning, requestPermissions, startService, stopService } from './src/background';
@@ -16,10 +18,14 @@ export default function App() {
   const [showOptions, setShowOptions] = useState(false);
   const [autoStart, setAutoStart] = useState(true);
   const [voiceInfo, setVoiceInfo] = useState('Verificando voz...');
+  const [autoUpdate, setAutoUpdate] = useState(false);
+  const [lastError, setLastError] = useState('');
   const autoDone = useRef(false);
 
   const refresh = useCallback(async () => {
     const cfg = await loadConfig();
+    setAutoUpdate(cfg.autoUpdate);
+    setLastError(await readLastError());
     setUfs(cfg.ufs);
     setSettings(cfg.settings);
     setAutoStart(cfg.autoStart);
@@ -75,9 +81,9 @@ export default function App() {
       const cfg = await refresh();
       if (autoDone.current) return;
       autoDone.current = true;
-      // ao abrir: baixa o que falta / o que mudou (sem alarde se estiver offline)
-      if (cfg.ufs.length) update(false, true);
-    })();
+      // por padrão o app NÃO usa a rede ao abrir; só se a opção estiver ligada
+      if (cfg.autoUpdate && cfg.ufs.length) update(false, true).catch(() => {});
+    })().catch(() => {});
   }, [refresh, update]);
 
   const toggleUf = async (u) => {
@@ -114,7 +120,7 @@ export default function App() {
   // mode: 'below' = abaixo do limite (beep compassado); 'above' = acima (beep rápido).
   const testAlert = async (mode) => {
     setError('');
-    const say = (m) => speak(m);
+    const say = (m) => speak(m, settings.leadMs);
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const beep = (ms) => { try { NativeModules.KRadarZstd.setBeep(ms); } catch {} };
     try {
@@ -162,11 +168,12 @@ export default function App() {
     await saveConfig({ settings: next });
   };
 
-  const fmt = (v) => (v === 0 ? 'Desligado' : `${v} m`);
+  const fmt = (v, key) => (v === 0 ? 'Desligado' : key === 'leadMs' ? `${v / 1000} s` : `${v} m`);
   const groups = [
     { key: 'beepM', title: 'Beep começa a tocar a (antes do radar)' },
     { key: 'firstM', title: 'Primeiro aviso falado' },
     { key: 'secondM', title: 'Segundo aviso falado' },
+    { key: 'leadMs', title: 'Atraso e som de abertura antes da fala (evita cortar o começo)' },
   ];
 
   if (showOptions) {
@@ -185,7 +192,7 @@ export default function App() {
               <View style={s.grid}>
                 {OPTION_VALUES[g.key].map((v) => (
                   <Pressable key={v} style={[s.chip, settings[g.key] === v && s.chipOn]} onPress={() => setOption(g.key, v)}>
-                    <Text style={s.chipText}>{fmt(v)}</Text>
+                    <Text style={s.chipText}>{fmt(v, g.key)}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -205,12 +212,22 @@ export default function App() {
             <Text style={s.line}>Voz da narração</Text>
             <Text style={s.info}>{voiceInfo}</Text>
             <View style={s.row}>
-              <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={async () => { await checkVoice(true); speak('Radar à frente, limite 60'); }}>
+              <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={async () => { await checkVoice(true); speak('Atenção! Radar à frente, limite 60', settings.leadMs); }}>
                 <Text style={s.btnText}>Testar voz</Text>
               </Pressable>
               <Pressable style={[s.btn, s.flex, s.btnGray]} onPress={openVoiceSettings}>
                 <Text style={s.btnText}>Config. de voz do Android</Text>
               </Pressable>
+            </View>
+          </View>
+          <View style={{ marginBottom: 14 }}>
+            <Text style={s.line}>Atualizar bases ao abrir o app (usa internet)</Text>
+            <View style={s.grid}>
+              {[[true, 'Ligado'], [false, 'Desligado']].map(([v, label]) => (
+                <Pressable key={label} style={[s.chip, autoUpdate === v && s.chipOn]} onPress={async () => { setAutoUpdate(v); await saveConfig({ autoUpdate: v }); }}>
+                  <Text style={s.chipText}>{label}</Text>
+                </Pressable>
+              ))}
             </View>
           </View>
           <Text style={s.foot}>Acima do limite de velocidade do radar o beep fica mais rápido (0,2 s).</Text>
@@ -232,7 +249,14 @@ export default function App() {
       {!!busy && <Text style={s.info}>{busy}</Text>}
       {!!error && <Text style={s.err} onPress={() => setError('')}>{error}  (toque para fechar)</Text>}
 
+      {!!lastError && (
+        <Text style={s.err} onPress={async () => { await clearLastError(); setLastError(''); }} numberOfLines={3}>
+          Último erro registrado (toque para limpar): {lastError}
+        </Text>
+      )}
+
       <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
+        <Speedometer />
         <View style={s.row}>
           <Pressable style={[s.btn, s.flex, running && s.btnOff]} onPress={toggleService}>
             <Text style={s.btnText}>{running ? 'Desativar' : 'Ativar'}</Text>

@@ -1,3 +1,4 @@
+import { NativeModules } from 'react-native';
 import * as Speech from 'expo-speech';
 
 // Escolhe explicitamente uma voz em português; sem isso, muitas multimídias caem no idioma padrão (inglês).
@@ -24,8 +25,10 @@ export async function findPortugueseVoice(force = false) {
 }
 
 /** Fala em português; usa a voz pt encontrada (se não houver, pede pt-BR ao motor). */
-export async function speak(text) {
+export async function speak(text, leadMs = 500) {
   const { voice } = await findPortugueseVoice();
+  // abre o áudio (silêncio temporizado no nativo) para a multimídia não cortar o início da fala
+  try { if (leadMs > 0) await NativeModules.KRadarZstd.primeAudio(leadMs); } catch {}
   Speech.speak(text, {
     language: voice ? voice.language : 'pt-BR',
     ...(voice ? { voice: voice.identifier } : {}),

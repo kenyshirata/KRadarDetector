@@ -1,6 +1,7 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { speak } from './speech';
+import { logError } from './errorlog';
 import { AppRegistry } from 'react-native';
 import { getDbs, loadConfig } from './database';
 import { NativeModules } from 'react-native';
@@ -28,10 +29,10 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }) => {
     const { msgs, beepMs } = analyze(dbs, loc, undefined, settings);
     setBeep(beepMs); // renovado a cada atualização de GPS; o nativo repete entre elas
     for (const msg of msgs) {
-      speak(msg);
+      speak(msg, settings.leadMs);
     }
   } catch (e) {
-    console.warn('kradar task', e);
+    logError('task', e);
   }
 });
 

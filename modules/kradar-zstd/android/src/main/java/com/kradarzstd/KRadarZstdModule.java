@@ -133,4 +133,48 @@ public class KRadarZstdModule extends ReactContextBaseJavaModule {
             public void run() { android.os.Process.killProcess(android.os.Process.myPid()); }
         }, 400);
     }
+    /**
+     * Abre o caminho de áudio antes da fala: toca um som curto quase inaudível + silêncio por ms (STREAM_MUSIC) e só então resolve.
+     * Muitas multimídias demoram para "acordar" o amplificador e cortam o início da fala.
+     * O tempo é medido no nativo, então não pausa com o JS em segundo plano.
+     */
+    @ReactMethod
+    public void primeAudio(final double msD, final Promise promise) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final int ms = (int) msD;
+                android.media.AudioTrack track = null;
+                try {
+                    if (ms > 0) {
+                        final int rate = 22050;
+                        final int bytes = rate * ms / 1000 * 2;
+                        int min = android.media.AudioTrack.getMinBufferSize(rate,
+                                android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT);
+                        track = new android.media.AudioTrack(AudioManager.STREAM_MUSIC, rate,
+                                android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT,
+                                Math.max(min, bytes), android.media.AudioTrack.MODE_STREAM);
+                        track.play();
+                        // som curto e quase inaudível (~4% do volume, 1 kHz, 150 ms, com fade) no início,
+                        // seguido de silêncio até completar ms: acorda amplificadores que ignoram silêncio puro.
+                        final byte[] pcm = new byte[bytes];
+                        final int toneSamples = Math.min(rate * 150 / 1000, bytes / 2);
+                        final int fade = rate * 20 / 1000;
+                        for (int i = 0; i < toneSamples; i++) {
+                            double env = Math.min(1.0, Math.min((double) i / fade, (double) (toneSamples - i) / fade));
+                            short v = (short) (Math.sin(2 * Math.PI * 1000.0 * i / rate) * 1300 * env);
+                            pcm[2 * i] = (byte) (v & 0xff);
+                            pcm[2 * i + 1] = (byte) ((v >> 8) & 0xff);
+                        }
+                        track.write(pcm, 0, bytes);
+                        Thread.sleep(ms);
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    try { if (track != null) { track.stop(); track.release(); } } catch (Throwable ignored) {}
+                    promise.resolve(true);
+                }
+            }
+        }, "kradar-prime").start();
+    }
 }

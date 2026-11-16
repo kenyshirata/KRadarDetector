@@ -13,10 +13,11 @@ export const OPTION_VALUES = {
   beepM: [50, 100, 150, 200, 250, 300],
   firstM: [0, 200, 300, 400, 500, 600],
   secondM: [0, 50, 100, 150],
+  volume: ['low', 'medium', 'high', 'max'], // volume dos avisos (voz embutida e beep)
   voice: ['app', 'android'], // app = frases pt-BR embutidas (padrão); android = voz do sistema (TTS)
   leadMs: [0, 300, 500, 800, 1000, 1500], // atraso antes da fala (acorda o áudio da multimídia)
 };
-export const DEFAULT_SETTINGS = { beepM: 200, firstM: 600, secondM: 150, leadMs: 500, voice: 'app' };
+export const DEFAULT_SETTINGS = { beepM: 200, firstM: 600, secondM: 150, leadMs: 500, voice: 'app', volume: 'high' };
 
 export function normalizeSettings(s) {
   const out = { ...DEFAULT_SETTINGS };

@@ -1,5 +1,6 @@
 import { NativeModules } from 'react-native';
 import * as Speech from 'expo-speech';
+import { levelOf } from './audio';
 
 // Escolhe explicitamente uma voz em português; sem isso, muitas multimídias caem no idioma padrão (inglês).
 let cached; // { voice, status } depois de resolvido
@@ -25,7 +26,7 @@ export async function findPortugueseVoice(force = false) {
 }
 
 /** Fala em português; usa a voz pt encontrada (se não houver, pede pt-BR ao motor). */
-export async function speak(text, leadMs = 500) {
+export async function speak(text, leadMs = 500, volume = 1) {
   const { voice } = await findPortugueseVoice();
   // abre o áudio (silêncio temporizado no nativo) para a multimídia não cortar o início da fala
   try { if (leadMs > 0) await NativeModules.KRadarZstd.primeAudio(leadMs); } catch {}
@@ -33,6 +34,7 @@ export async function speak(text, leadMs = 500) {
     language: voice ? voice.language : 'pt-BR',
     ...(voice ? { voice: voice.identifier } : {}),
     rate: 1.05,
+    volume: Math.max(0, Math.min(1, volume)),
   });
 }
 
@@ -64,7 +66,10 @@ let playing = false;
  * alert = { text, kind, limit }. Ignora chamadas enquanto outra fala está tocando só quando
  * `dropIfBusy` (usado pelo botão de teste); os avisos reais ficam em fila no nativo.
  */
-export async function speakAlert(alert, leadMs = 500, dropIfBusy = false, source = 'app') {
+export async function speakAlert(alert, settings = {}, dropIfBusy = false) {
+  const leadMs = settings.leadMs != null ? settings.leadMs : 500;
+  const source = settings.voice || 'app';
+  const gain = levelOf(settings).gain;
   if (dropIfBusy && playing) return false;
   playing = true;
   try {
@@ -72,14 +77,14 @@ export async function speakAlert(alert, leadMs = 500, dropIfBusy = false, source
     const clips = source === 'android' ? null : clipsFor(alert);
     if (clips) {
       try {
-        await NativeModules.KRadarZstd.playClips(clips, leadMs);
+        await NativeModules.KRadarZstd.playClips(clips, leadMs, gain);
         return true;
       } catch {
         // cai para o TTS
       }
     }
     try { Speech.stop(); } catch {}
-    await speak(alert.text, leadMs);
+    await speak(alert.text, leadMs, gain);
     return true;
   } finally {
     playing = false;

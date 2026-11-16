@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Linking, NativeModules, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import { speakAlert, stopSpeech, findPortugueseVoice } from './src/speech';
+import { setBeep as nativeBeep, VOLUME_LEVELS } from './src/audio';
 import Speedometer from './src/Speedometer';
 import { readLastError, clearLastError } from './src/errorlog';
 import { simulateApproach, OPTION_VALUES, DEFAULT_SETTINGS } from './src/detector';
@@ -121,9 +122,9 @@ export default function App() {
   // mode: 'below' = abaixo do limite (beep compassado); 'above' = acima (beep rápido).
   const testAlert = async (mode) => {
     setError('');
-    const say = (al) => speakAlert(al, settings.leadMs, false, settings.voice);
+    const say = (al) => speakAlert(al, settings);
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const beep = (ms) => { try { NativeModules.KRadarZstd.setBeep(ms); } catch {} };
+    const beep = (ms) => nativeBeep(ms, settings);
     try {
       const steps = simulateApproach(await getDbs(), mode, settings);
       for (const st of steps) {
@@ -135,7 +136,7 @@ export default function App() {
       beep(0);
       setBusy('Teste concluído.');
     } catch (e) {
-      try { NativeModules.KRadarZstd.setBeep(0); } catch {}
+      nativeBeep(0, settings);
       setBusy('');
       setError(String(e.message || e));
     }
@@ -162,7 +163,7 @@ export default function App() {
     try {
       stopSpeech();
       checkVoice(true);
-      await speakAlert({ text: 'Atenção! Radar à frente, limite 60', kind: 'FIXED', limit: 60 }, settings.leadMs, true, settings.voice);
+      await speakAlert({ text: 'Atenção! Radar à frente, limite 60', kind: 'FIXED', limit: 60 }, settings, true);
     } finally {
       voiceTesting.current = false;
     }
@@ -182,11 +183,12 @@ export default function App() {
     await saveConfig({ settings: next });
   };
 
-  const fmt = (v, key) => (key === 'voice' ? (v === 'app' ? 'App (pt-BR embutida)' : 'Android (voz do sistema)') : v === 0 ? 'Desligado' : key === 'leadMs' ? `${v / 1000} s` : `${v} m`);
+  const fmt = (v, key) => (key === 'volume' ? VOLUME_LEVELS[v].label : key === 'voice' ? (v === 'app' ? 'App (pt-BR embutida)' : 'Android (voz do sistema)') : v === 0 ? 'Desligado' : key === 'leadMs' ? `${v / 1000} s` : `${v} m`);
   const groups = [
     { key: 'beepM', title: 'Beep começa a tocar a (antes do radar)' },
     { key: 'firstM', title: 'Primeiro aviso falado' },
     { key: 'secondM', title: 'Segundo aviso falado' },
+    { key: 'volume', title: 'Volume dos avisos (voz e beep)' },
     { key: 'voice', title: 'Voz dos avisos' },
     { key: 'leadMs', title: 'Atraso e som de abertura antes da fala (evita cortar o começo)' },
   ];

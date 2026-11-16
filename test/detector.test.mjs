@@ -46,7 +46,7 @@ assert.equal(st.flatMap((x) => x.msgs).length, 1, 'só o segundo aviso');
 assert.ok(st.find((x) => x.dist === 300).beepMs === 1000 && st.find((x) => x.dist === 350).beepMs === 0, 'beep a 300 m');
 const st2 = sim3([], 'below', { beepM: 50, firstM: 200, secondM: 0 });
 assert.equal(st2.flatMap((x) => x.msgs).length, 1, 'só o primeiro aviso');
-assert.deepEqual(normalizeSettings({ beepM: 123 }), { beepM: 200, firstM: 600, secondM: 150, leadMs: 500, voice: 'app' });
+assert.deepEqual(normalizeSettings({ beepM: 123 }), { beepM: 200, firstM: 600, secondM: 150, leadMs: 500, voice: 'app', volume: 'high' });
 console.log('opções OK');
 
 assert.equal(normalizeSettings({ voice: 'android' }).voice, 'android');

@@ -1,13 +1,13 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { speakAlert } from './speech';
+import { setBeep } from './audio';
 import { logError } from './errorlog';
 import { AppRegistry } from 'react-native';
 import { getDbs, loadConfig } from './database';
 import { NativeModules } from 'react-native';
 import { analyze, resetStages } from './detector';
 
-const setBeep = (ms) => { try { NativeModules.KRadarZstd.setBeep(ms); } catch {} };
 
 export const TASK_NAME = 'kradar-location';
 
@@ -27,8 +27,8 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }) => {
     };
     const { settings } = await loadConfig();
     const { alerts, beepMs } = analyze(dbs, loc, undefined, settings);
-    setBeep(beepMs); // renovado a cada atualização de GPS; o nativo repete entre elas
-    for (const a of alerts) speakAlert(a, settings.leadMs, false, settings.voice);
+    setBeep(beepMs, settings); // renovado a cada atualização de GPS; o nativo repete entre elas
+    for (const a of alerts) speakAlert(a, settings);
   } catch (e) {
     logError('task', e);
   }

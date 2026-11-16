@@ -80,12 +80,14 @@ public class KRadarZstdModule extends ReactContextBaseJavaModule {
     private static java.util.concurrent.ScheduledFuture<?> beepTask;
     private static volatile long lastSet = 0;
     private static int currentMs = 0;
+    private static int toneVolume = 80; // 0-100
     private static final long WATCHDOG_MS = 6000; // sem novo setBeep em 6 s => para sozinho
 
     /** ms > 0: toca beep a cada ms; 0: para. O JS deve renovar a cada atualização de GPS. */
     @ReactMethod
-    public void setBeep(final double msD) {
+    public void setBeep(final double msD, final double volumeD) {
         final int ms = (int) msD;
+        final int vol = Math.max(0, Math.min(100, (int) volumeD));
         synchronized (BEEP_LOCK) {
             lastSet = System.currentTimeMillis();
             if (ms <= 0) {
@@ -93,11 +95,16 @@ public class KRadarZstdModule extends ReactContextBaseJavaModule {
                 currentMs = 0;
                 return;
             }
+            if (vol != toneVolume) { // volume mudou: recria o gerador de tom
+                toneVolume = vol;
+                try { if (tone != null) tone.release(); } catch (Throwable ignored) {}
+                tone = null;
+            }
             if (beepTask != null && ms == currentMs) return; // já tocando nesse ritmo
             if (beepTask != null) beepTask.cancel(false);
             if (exec == null) exec = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
             if (tone == null) {
-                try { tone = new ToneGenerator(AudioManager.STREAM_MUSIC, 100); } catch (Throwable t) { tone = null; }
+                try { tone = new ToneGenerator(AudioManager.STREAM_MUSIC, toneVolume); } catch (Throwable t) { tone = null; }
             }
             currentMs = ms;
             beepTask = exec.scheduleAtFixedRate(new Runnable() {
@@ -119,7 +126,7 @@ public class KRadarZstdModule extends ReactContextBaseJavaModule {
     /** Fecha a tela, remove o app dos recentes e encerra o processo (derruba também o beep). */
     @ReactMethod
     public void quitApp() {
-        setBeep(0);
+        setBeep(0, 0);
         final android.app.Activity act = getCurrentActivity();
         if (act != null) {
             act.runOnUiThread(new Runnable() {
@@ -203,7 +210,7 @@ public class KRadarZstdModule extends ReactContextBaseJavaModule {
      * Resolve quando termina de tocar; rejeita se algum trecho não existir (o JS usa o TTS como plano B).
      */
     @ReactMethod
-    public void playClips(final ReadableArray names, final double leadMsD, final Promise promise) {
+    public void playClips(final ReadableArray names, final double leadMsD, final double gainD, final Promise promise) {
         final android.content.res.AssetManager am = getReactApplicationContext().getAssets();
         new Thread(new Runnable() {
             @Override
@@ -235,6 +242,15 @@ public class KRadarZstdModule extends ReactContextBaseJavaModule {
                             pcm.write(clip, 0, clip.length);
                         }
                         final byte[] data = pcm.toByteArray();
+                        final float gain = (float) Math.max(0.0, Math.min(1.0, gainD));
+                        if (gain < 0.999f) { // volume do aviso (o áudio embutido já vem com ganho alto)
+                            for (int i = 0; i + 1 < data.length; i += 2) {
+                                int v = (short) ((data[i] & 0xff) | (data[i + 1] << 8));
+                                v = Math.round(v * gain);
+                                data[i] = (byte) (v & 0xff);
+                                data[i + 1] = (byte) ((v >> 8) & 0xff);
+                            }
+                        }
                         int min = android.media.AudioTrack.getMinBufferSize(rate,
                                 android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT);
                         track = new android.media.AudioTrack(AudioManager.STREAM_MUSIC, rate,
